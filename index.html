@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#05070f">
+<title>PLAYER: AWAKENED</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AWAKENED">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="app">
+
+  <!-- ===== Header: rank + level + XP bar ===== -->
+  <header class="hud panel">
+    <div class="hud-top">
+      <div class="rank-badge" id="rankBadge">D</div>
+      <div class="hud-level">
+        <div class="hud-label">HUNTER LEVEL</div>
+        <div class="level-num">LV. <span id="levelNum">12</span></div>
+      </div>
+      <button class="info-btn" id="infoBtn" aria-label="Stat definitions">ⓘ</button>
+    </div>
+    <div class="xp-wrap">
+      <div class="xp-bar"><div class="xp-fill" id="xpFill"></div></div>
+      <div class="xp-text"><span id="xpText">172 / 260</span> XP</div>
+    </div>
+  </header>
+
+  <!-- ===== Radar chart ===== -->
+  <section class="panel radar-panel">
+    <div class="panel-title">STATUS</div>
+    <div id="radar"></div>
+    <div class="stat-row" id="statRow"></div>
+  </section>
+
+  <!-- ===== Today's tasks ===== -->
+  <section class="panel">
+    <div class="panel-title">DAILY QUESTS</div>
+    <ul class="task-list" id="taskList"></ul>
+  </section>
+
+  <div class="footer-space"></div>
+</main>
+
+<!-- Floating log button -->
+<button class="log-btn" id="logBtn">+ LOG</button>
+
+<!-- ===== Screen 2: Log an Action (overlay) ===== -->
+<div class="screen-log hidden" id="logScreen">
+  <div class="log-inner">
+    <section class="panel">
+      <div class="panel-title">LOG AN ACTION</div>
+
+      <input type="text" id="logInput" class="log-input" placeholder="What did you do? (e.g. ran 3 miles)" autocomplete="off">
+
+      <div class="picker-label">STAT <span class="guess-hint" id="guessHint"></span></div>
+      <div class="chip-row" id="statChips"></div>
+
+      <div class="picker-label">EFFORT</div>
+      <div class="chip-row" id="effortChips"></div>
+
+      <div class="picker-label">FREQUENCY</div>
+      <div class="chip-row" id="freqChips"></div>
+
+      <div id="weeklySection" class="hidden">
+        <div class="picker-label">WHICH DAYS?</div>
+        <div class="chip-row" id="dayChips"></div>
+      </div>
+
+      <div id="monthlySection" class="hidden">
+        <div class="picker-label">WHICH DATE?</div>
+        <div class="date-grid" id="dateGrid"></div>
+      </div>
+
+      <button class="action-btn primary" id="completeNowBtn">✦ COMPLETE NOW</button>
+      <button class="action-btn" id="addTodayBtn">ADD TO TODAY'S QUESTS</button>
+      <button class="action-btn ghost" id="logCancelBtn">CANCEL</button>
+    </section>
+
+    <section class="panel hidden" id="recurringPanel">
+      <div class="panel-title">RECURRING QUESTS</div>
+      <div id="recurringGroups"></div>
+    </section>
+  </div>
+</div>
+
+<!-- Stat definitions modal -->
+<div class="modal-backdrop hidden" id="infoModal">
+  <div class="modal panel">
+    <div class="panel-title">STAT GUIDE</div>
+    <dl class="stat-defs" id="statDefs"></dl>
+    <div class="sys-section">
+      <div class="sys-title">SYSTEM</div>
+      <div class="sys-row">
+        <button class="sys-btn" id="exportBtn">EXPORT SAVE</button>
+        <button class="sys-btn" id="importBtn">IMPORT SAVE</button>
+      </div>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+    <button class="modal-close" id="infoClose">CLOSE</button>
+  </div>
+</div>
+
+<!-- Celebration overlay (level-up / rank-up cards) -->
+<div class="celebration hidden" id="celebration">
+  <div class="celebration-card" id="celebrationCard">
+    <div class="celebration-label" id="celebLabel">LEVEL UP</div>
+    <div class="celebration-big" id="celebBig"></div>
+    <div class="celebration-sub" id="celebSub"></div>
+    <div class="celebration-tap">TAP TO CONTINUE</div>
+  </div>
+</div>
+
+<!-- System toast -->
+<div class="toast hidden" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
