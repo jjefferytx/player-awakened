@@ -12,9 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="AWAKENED">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,16 +22,16 @@
   <!-- ===== Header: rank + level + XP bar ===== -->
   <header class="hud panel">
     <div class="hud-top">
-      <div class="rank-badge" id="rankBadge">D</div>
+      <div class="rank-badge" id="rankBadge"></div>
       <div class="hud-level">
         <div class="hud-label">HUNTER LEVEL</div>
-        <div class="level-num">LV. <span id="levelNum">12</span></div>
+        <div class="level-num">LV. <span id="levelNum">—</span></div>
       </div>
       <button class="info-btn" id="infoBtn" aria-label="Stat definitions">ⓘ</button>
     </div>
     <div class="xp-wrap">
       <div class="xp-bar"><div class="xp-fill" id="xpFill"></div></div>
-      <div class="xp-text"><span id="xpText">172 / 260</span> XP</div>
+      <div class="xp-text"><span id="xpText">— / —</span> XP</div>
     </div>
   </header>
 

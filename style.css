@@ -506,9 +506,7 @@ body {
 .action-btn.ghost { border-color: transparent; color: var(--text-dim); }
 .action-btn:active { transform: scale(0.98); }
 
-/* ===== Saved tasks ===== */
-.saved-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
-
+/* ===== Recurring quest cards ===== */
 .saved-card {
   display: flex;
   align-items: center;
@@ -517,20 +515,6 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-}
-
-.saved-add {
-  background: none;
-  border: 1px solid var(--glow);
-  border-radius: 6px;
-  color: var(--accent);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 7px 10px;
-  cursor: pointer;
-  flex-shrink: 0;
 }
 
 .saved-del {

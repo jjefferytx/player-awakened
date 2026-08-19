@@ -22,11 +22,13 @@ const EFFORTS = [
   { key: 'hard',   label: 'HARD',   xp: 50 },
 ];
 
+// single source of truth for frequencies: picker label, task-card chip label,
+// and recurring-list group title all derive from here
 const FREQS = [
   { key: 'once',    label: 'ONE-TIME' },
-  { key: 'daily',   label: 'DAILY QUEST' },
-  { key: 'weekly',  label: 'WEEKLY' },
-  { key: 'monthly', label: 'MONTHLY' },
+  { key: 'daily',   label: 'DAILY QUEST', chip: 'DAILY',   group: 'DAILY QUESTS' },
+  { key: 'weekly',  label: 'WEEKLY',      chip: 'WEEKLY',  group: 'WEEKLY' },
+  { key: 'monthly', label: 'MONTHLY',     chip: 'MONTHLY', group: 'MONTHLY' },
 ];
 
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -39,7 +41,12 @@ const RANKS = [
 const STAT_XP_PER_POINT = 50;
 const xpForLevel = (level) => 80 + level * 15;
 const effortXp = (key) => (EFFORTS.find(e => e.key === key) || EFFORTS[1]).xp;
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// LOCAL date, never UTC — the whole scheduler thinks in the user's timezone,
+// so the "new day" boundary must be their midnight, not UTC's
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 function rankFor(level) {
@@ -83,18 +90,92 @@ function migrate(st) {
   return st;
 }
 
+// Rebuild a guaranteed-valid state from ANY input (old saves, imported files,
+// hand-edited JSON). Every field is type-checked; anything broken falls back
+// to a sane default instead of crashing a render later.
+function normalizeState(raw) {
+  const st = defaultState();
+  if (!raw || typeof raw !== 'object') return st;
+  migrate(raw); // convert pre-scheduler shapes first
+
+  const num = (v, fallback, min, max) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
+  };
+  const validStat = (a) => STATS.some(s => s.abbr === a);
+  const validEffort = (k) => EFFORTS.some(e => e.key === k);
+
+  st.level = num(raw.level, 1, 1, 100);
+  st.xp = num(raw.xp, 0, 0, Infinity);
+  while (st.xp >= xpForLevel(st.level) && st.level < 100) { st.xp -= xpForLevel(st.level); st.level++; }
+
+  STATS.forEach(s => {
+    const src = raw.stats && raw.stats[s.abbr];
+    let pts = num(src && src.pts, 0, 0, Infinity);
+    let xp = num(src && src.xp, 0, 0, Infinity);
+    pts += Math.floor(xp / STAT_XP_PER_POINT); // old 100-XP-era banks convert, nothing is lost
+    xp = xp % STAT_XP_PER_POINT;
+    st.stats[s.abbr] = { pts, xp };
+  });
+
+  if (Array.isArray(raw.tasks)) {
+    st.tasks = raw.tasks
+      .filter(t => t && typeof t.name === 'string' && t.name.trim() && validStat(t.stat))
+      .map(t => ({
+        id: typeof t.id === 'string' ? t.id : uid(),
+        templateId: typeof t.templateId === 'string' ? t.templateId : undefined,
+        name: t.name,
+        stat: t.stat,
+        effort: validEffort(t.effort) ? t.effort : 'medium',
+        freq: FREQS.some(f => f.key === t.freq) ? t.freq : 'once',
+        done: t.done === true,
+      }));
+  }
+
+  if (Array.isArray(raw.recurring)) {
+    st.recurring = raw.recurring
+      .filter(t => t && typeof t.name === 'string' && t.name.trim() && validStat(t.stat) &&
+                   ['daily', 'weekly', 'monthly'].includes(t.freq))
+      .map(t => {
+        const tpl = {
+          id: typeof t.id === 'string' ? t.id : uid(),
+          name: t.name,
+          stat: t.stat,
+          effort: validEffort(t.effort) ? t.effort : 'medium',
+          freq: t.freq,
+        };
+        if (t.freq === 'weekly') {
+          tpl.days = Array.isArray(t.days) ? t.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6) : [];
+          if (tpl.days.length === 0) tpl.days = [new Date().getDay()];
+        }
+        if (t.freq === 'monthly') tpl.monthDay = t.monthDay === 'last' ? 'last' : num(t.monthDay, 1, 1, 31);
+        if (typeof t.skippedOn === 'string') tpl.skippedOn = t.skippedOn;
+        return tpl;
+      });
+  }
+
+  st.lastDate = typeof raw.lastDate === 'string' ? raw.lastDate : todayStr();
+  return st;
+}
+
 let state = loadState();
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(OLD_STORAGE_KEY);
-    if (raw) return migrate(JSON.parse(raw));
+    if (raw) return normalizeState(JSON.parse(raw));
   } catch (e) { /* corrupted storage — start fresh */ }
   return defaultState();
 }
 
+let saveWarned = false;
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    // private browsing / quota pressure — keep the app alive, tell the user once
+    if (!saveWarned) { saveWarned = true; toast('⚠ Couldn’t save — progress won’t survive closing this tab'); }
+  }
 }
 
 // ===== Scheduling =====
@@ -104,7 +185,10 @@ function isDueOn(tpl, d) {
   if (tpl.freq === 'monthly') {
     const dom = d.getDate();
     const lastDom = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    return tpl.monthDay === 'last' ? dom === lastDom : dom === tpl.monthDay;
+    // a monthDay past the month's end clamps to its last day, so "the 31st"
+    // still fires in February (on the 28th/29th) instead of silently skipping
+    const target = tpl.monthDay === 'last' ? lastDom : Math.min(tpl.monthDay, lastDom);
+    return dom === target;
   }
   return false;
 }
@@ -126,34 +210,45 @@ function scheduleText(tpl) {
   if (tpl.freq === 'daily') return 'Every day';
   if (tpl.freq === 'weekly')
     return (tpl.days || []).slice().sort((a, b) => a - b).map(d => DAY_NAMES[d]).join(' · ');
-  if (tpl.freq === 'monthly')
-    return tpl.monthDay === 'last' ? 'Last day of each month' : `${ordinal(tpl.monthDay)} of each month`;
+  if (tpl.freq === 'monthly') {
+    if (tpl.monthDay === 'last') return 'Last day of each month';
+    const suffix = tpl.monthDay > 28 ? ' (or last day)' : '';
+    return `${ordinal(tpl.monthDay)}${suffix} of each month`;
+  }
   return '';
 }
 
 // spawn today's instances for any due template that doesn't already have one
+// (a template skipped today via ✕ stays gone until tomorrow)
 function generateToday() {
   let changed = false;
   const now = new Date();
   state.recurring.forEach(tpl => {
+    if (tpl.skippedOn === todayStr()) return;
     if (isDueOn(tpl, now) && !state.tasks.some(t => t.templateId === tpl.id)) {
       state.tasks.push({ id: uid(), templateId: tpl.id, name: tpl.name, stat: tpl.stat, effort: tpl.effort, freq: tpl.freq, done: false });
       changed = true;
     }
   });
-  if (changed) saveState();
+  return changed;
 }
 
-// New day: clear finished one-timers and all recurring instances, then respawn what's due
+// New day: clear finished one-timers and all recurring instances, then respawn
+// what's due. Called on load, focus, visibility, and a minute timer — so it only
+// saves/renders when something actually changed.
 function dailyReset() {
   const today = todayStr();
+  let changed = false;
   if (state.lastDate !== today) {
     state.tasks = state.tasks.filter(t => !t.templateId && !t.done);
     state.lastDate = today;
-    saveState();
+    changed = true;
   }
-  generateToday();
-  renderAll();
+  if (generateToday()) changed = true;
+  if (changed) {
+    saveState();
+    renderAll();
+  }
 }
 
 // ===== XP engine =====
@@ -359,7 +454,8 @@ function renderStatRow() {
 }
 
 function freqLabel(freq) {
-  return { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY' }[freq] || '';
+  const f = FREQS.find(x => x.key === freq);
+  return (f && f.chip) || '';
 }
 
 function renderTasks() {
@@ -442,9 +538,15 @@ function moveTask(i, dir) {
 function removeTask(t) {
   // removing a completed quest keeps its XP — it still happened
   state.tasks = state.tasks.filter(x => x.id !== t.id);
+  // mark the template skipped for today, or generateToday would respawn the
+  // quest on the next focus (which also allowed complete→remove→complete XP farming)
+  if (t.templateId) {
+    const tpl = state.recurring.find(x => x.id === t.templateId);
+    if (tpl) tpl.skippedOn = todayStr();
+  }
   saveState();
   renderTasks();
-  toast('Quest removed' + (t.templateId ? ' (schedule kept — manage it in + LOG)' : ''));
+  toast(t.templateId ? 'Skipped for today — back next time it’s due' : 'Quest removed');
 }
 
 // ===== Screen 2: Log an Action =====
@@ -641,11 +743,7 @@ function renderRecurring() {
   }
   panel.classList.remove('hidden');
 
-  const groups = [
-    { freq: 'daily',   title: 'DAILY QUESTS' },
-    { freq: 'weekly',  title: 'WEEKLY' },
-    { freq: 'monthly', title: 'MONTHLY' },
-  ];
+  const groups = FREQS.filter(f => f.group).map(f => ({ freq: f.key, title: f.group }));
 
   groups.forEach(g => {
     const tpls = state.recurring.filter(t => t.freq === g.freq);
@@ -727,31 +825,39 @@ function setupBackup() {
   document.getElementById('importBtn').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
+    fileInput.value = ''; // reset up front so cancelling and re-picking the same file works
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const incoming = JSON.parse(reader.result);
-        if (typeof incoming.level !== 'number' || !incoming.stats) throw new Error('not an ARISE save');
+        if (typeof incoming.level !== 'number' || !incoming.stats) throw new Error('missing save fields');
         if (!confirm(`Replace your current save (LV. ${state.level}) with this file (LV. ${incoming.level})?`)) return;
-        state = migrate(incoming);
+        state = normalizeState(incoming); // never trust a file — rebuild it as valid state
         saveState();
         dailyReset();
+        renderAll();
         toast('Save imported');
       } catch (e) {
-        toast('That file is not a valid ARISE save');
+        toast('That file is not a valid PLAYER: AWAKENED save');
       }
-      fileInput.value = '';
     };
     reader.readAsText(file);
   });
 }
 
 // ===== Boot =====
+// three day-rollover triggers: refocus, becoming visible again (iOS PWA resume
+// doesn't always fire 'focus'), and a minute timer for sessions left open
+// across midnight. dailyReset is cheap when nothing changed.
 window.addEventListener('focus', dailyReset);
-saveState();                              // persist under the new key immediately
-localStorage.removeItem(OLD_STORAGE_KEY); // old-name save is migrated; clear it
+document.addEventListener('visibilitychange', () => { if (!document.hidden) dailyReset(); });
+setInterval(dailyReset, 60 * 1000);
+
+saveState();                                    // persist under the new key immediately
+try { localStorage.removeItem(OLD_STORAGE_KEY); } catch (e) { /* storage unavailable */ }
 dailyReset();
+renderAll();
 setupModal();
 setupBackup();
 
