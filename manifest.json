@@ -2,6 +2,7 @@
   "name": "PLAYER: AWAKENED",
   "short_name": "AWAKENED",
   "description": "A Solo Leveling-style stat sheet for real life.",
+  "version": "1.1",
   "start_url": ".",
   "display": "standalone",
   "orientation": "portrait",

@@ -1,5 +1,9 @@
 // ===== PLAYER: AWAKENED =====
 
+// Shown in the ⓘ modal under SYSTEM. With a service worker caching the app
+// shell, this is how you tell whether the phone actually took an update.
+const APP_VERSION = '1.1';
+
 const STORAGE_KEY = 'awakened-state-v1';
 const OLD_STORAGE_KEY = 'arise-state-v1'; // pre-rename saves migrate from here
 
@@ -976,6 +980,7 @@ function setupModal() {
   const modal = document.getElementById('infoModal');
   document.getElementById('statDefs').innerHTML = STATS.map(s =>
     `<dt>${s.abbr} — ${s.name}</dt><dd>${s.def}</dd>`).join('');
+  document.getElementById('sysVersion').textContent = `VERSION ${APP_VERSION}`;
   document.getElementById('infoBtn').addEventListener('click', () => modal.classList.remove('hidden'));
   document.getElementById('infoClose').addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
