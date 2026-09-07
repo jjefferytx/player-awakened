@@ -22,13 +22,29 @@ const EFFORTS = [
   { key: 'hard',   label: 'HARD',   xp: 50 },
 ];
 
+// The System's Daily Quest: five fixed challenges, one per stat, assigned not
+// chosen. Edit the names/targets/efforts here — nothing else needs to change.
+// Order follows STATS so the checklist reads in the same order as the radar.
+const DAILY_QUEST = [
+  { stat: 'STR', name: 'Resistance training', target: '30 minutes',   effort: 'medium' },
+  { stat: 'VIT', name: 'Drink water',         target: '100 oz / 3 L', effort: 'medium' },
+  { stat: 'AGI', name: 'Mobility / stretch',  target: '15 minutes',   effort: 'medium' },
+  { stat: 'INT', name: 'Read',                target: '15 minutes',   effort: 'medium' },
+  { stat: 'PER', name: 'Meditate',            target: '15 minutes',   effort: 'medium' },
+];
+// Bonus for clearing all five, split evenly across every stat — so a full clear
+// grows the whole pentagon, not just the five it touched. Keep it divisible by 5.
+const DAILY_BONUS_XP = 50;
+
 // single source of truth for frequencies: picker label, task-card chip label,
-// and recurring-list group title all derive from here
+// and recurring-list group title all derive from here.
+// 'daily' is deliberately just DAILY — "DAILY QUEST" now means the System's
+// five, and two things wearing that name is how you confuse yourself at 6am.
 const FREQS = [
   { key: 'once',    label: 'ONE-TIME' },
-  { key: 'daily',   label: 'DAILY QUEST', chip: 'DAILY',   group: 'DAILY QUESTS' },
-  { key: 'weekly',  label: 'WEEKLY',      chip: 'WEEKLY',  group: 'WEEKLY' },
-  { key: 'monthly', label: 'MONTHLY',     chip: 'MONTHLY', group: 'MONTHLY' },
+  { key: 'daily',   label: 'DAILY',   chip: 'DAILY',   group: 'DAILY' },
+  { key: 'weekly',  label: 'WEEKLY',  chip: 'WEEKLY',  group: 'WEEKLY' },
+  { key: 'monthly', label: 'MONTHLY', chip: 'MONTHLY', group: 'MONTHLY' },
 ];
 
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -67,10 +83,19 @@ function ordinal(n) {
 // ===== State =====
 // tasks:     today's quest instances {id, templateId?, name, stat, effort, freq, done}
 // recurring: schedule templates {id, name, stat, effort, freq, days?, monthDay?}
+// daily:     today's Daily Quest progress {done: {STR:bool,...}, bonus: bool}
+//            bonus tracks whether the all-five bonus is currently applied, so
+//            it's granted once and cleanly reversed if a box gets un-checked
+function freshDaily() {
+  const done = {};
+  DAILY_QUEST.forEach(q => { done[q.stat] = false; });
+  return { done, bonus: false };
+}
+
 function defaultState() {
   const stats = {};
   STATS.forEach(s => { stats[s.abbr] = { pts: 0, xp: 0 }; });
-  return { level: 1, xp: 0, stats, tasks: [], recurring: [], lastDate: todayStr() };
+  return { level: 1, xp: 0, stats, tasks: [], recurring: [], daily: freshDaily(), lastDate: todayStr() };
 }
 
 function migrate(st) {
@@ -154,9 +179,23 @@ function normalizeState(raw) {
       });
   }
 
+  // Daily Quest: only ever trust booleans, and only for stats the quest defines.
+  // A save from before this feature (or one missing the key) just starts fresh.
+  if (raw.daily && typeof raw.daily === 'object') {
+    const rd = raw.daily.done;
+    if (rd && typeof rd === 'object') {
+      DAILY_QUEST.forEach(q => { st.daily.done[q.stat] = rd[q.stat] === true; });
+    }
+    // a bonus can only stand while all five are actually checked
+    st.daily.bonus = raw.daily.bonus === true && dailyQuestCleared(st.daily);
+  }
+
   st.lastDate = typeof raw.lastDate === 'string' ? raw.lastDate : todayStr();
   return st;
 }
+
+const dailyQuestCleared = (d) => DAILY_QUEST.every(q => d.done[q.stat]);
+const dailyQuestCount = (d) => DAILY_QUEST.filter(q => d.done[q.stat]).length;
 
 let state = loadState();
 
@@ -241,6 +280,7 @@ function dailyReset() {
   let changed = false;
   if (state.lastDate !== today) {
     state.tasks = state.tasks.filter(t => !t.templateId && !t.done);
+    state.daily = freshDaily();   // the Daily Quest is new every day, cleared or not
     state.lastDate = today;
     changed = true;
   }
@@ -313,7 +353,7 @@ function chime(kind) {
       tone(659.25, 0.10, 0.16);
       tone(783.99, 0.20, 0.16);
       tone(1046.5, 0.30, 0.5, 'sine', 0.16);
-    } else if (kind === 'rank') {        // low swell + triumphant arpeggio
+    } else if (kind === 'rank' || kind === 'daily') { // low swell + triumphant arpeggio
       tone(130.81, 0, 1.2, 'triangle', 0.10);
       tone(523.25, 0.25, 0.22, 'sine', 0.14);
       tone(659.25, 0.40, 0.22, 'sine', 0.14);
@@ -349,6 +389,12 @@ function pulseXpBar() {
 const celebration = document.getElementById('celebration');
 let celebTimer = null;
 
+// Cards can stack — clearing the Daily Quest often levels you up in the same
+// tap. Rather than pick a winner, queue them cause-first and play in sequence.
+let cardQueue = [];
+
+const CARD_HOLD = { daily: 4200, rank: 6000, level: 2800 };
+
 function showCard(kind) {
   const card = document.getElementById('celebrationCard');
   card.className = 'celebration-card ' + kind +
@@ -357,37 +403,65 @@ function showCard(kind) {
     document.getElementById('celebLabel').textContent = 'RANK UP';
     document.getElementById('celebBig').textContent = rankFor(state.level);
     document.getElementById('celebSub').textContent = `HUNTER LEVEL ${state.level}`;
+  } else if (kind === 'daily') {
+    document.getElementById('celebLabel').textContent = 'DAILY QUEST';
+    document.getElementById('celebBig').textContent = 'COMPLETE';
+    document.getElementById('celebSub').textContent = `+${DAILY_BONUS_XP} XP BONUS · ALL FIVE STATS`;
   } else {
     document.getElementById('celebLabel').textContent = 'LEVEL UP';
     document.getElementById('celebBig').textContent = `LV. ${state.level}`;
     document.getElementById('celebSub').textContent = `${xpForLevel(state.level) - state.xp} XP to next level`;
   }
+  chime(kind);
   celebration.classList.remove('hidden');
   clearTimeout(celebTimer);
-  // level cards excuse themselves; rank cards wait to be admired (with a fallback)
-  celebTimer = setTimeout(dismissCard, kind === 'rank' ? 6000 : 2800);
+  // level cards excuse themselves; the big ones wait to be admired (with a fallback)
+  celebTimer = setTimeout(dismissCard, CARD_HOLD[kind] || 2800);
+}
+
+function runCardQueue(kinds) {
+  cardQueue = kinds.slice();
+  showNextCard();
+}
+
+function showNextCard() {
+  const kind = cardQueue.shift();
+  if (kind) showCard(kind);
 }
 
 function dismissCard() {
   clearTimeout(celebTimer);
   celebration.classList.add('hidden');
+  // let the overlay clear before the next card flies in, or they visually collide
+  if (cardQueue.length) setTimeout(showNextCard, 420);
 }
 celebration.addEventListener('click', dismissCard);
 
-function celebrate(events, statAbbr) {
-  if (events.xp > 0) {
-    flashStat(statAbbr, events.xp, events.statGained);
-    pulseXpBar();
-  }
-  if (events.rankChanged) {
+// Split in two so the Daily Quest can flash five stats with its own numbers
+// while still sharing one chime-and-card path with ordinary quests.
+function flashFor(events, statAbbr) {
+  if (events.xp <= 0) return;
+  flashStat(statAbbr, events.xp, events.statGained);
+  pulseXpBar();
+}
+
+function celebrateCards(events, dailyCleared) {
+  const queue = [];
+  if (dailyCleared) queue.push('daily');            // the cause comes first
+  if (events.rankChanged) queue.push('rank');
+  else if (events.levelsGained > 0) queue.push('level');
+
+  if (queue.length) {
     chime('complete');
-    setTimeout(() => { chime('rank'); showCard('rank'); }, 650);
-  } else if (events.levelsGained > 0) {
-    chime('complete');
-    setTimeout(() => { chime('level'); showCard('level'); }, 650);
+    setTimeout(() => runCardQueue(queue), 650);
   } else if (events.xp > 0) {
     chime('complete');
   }
+}
+
+function celebrate(events, statAbbr) {
+  flashFor(events, statAbbr);
+  celebrateCards(events, false);
 }
 
 // ===== Stat guesser (v1: keyword table) =====
@@ -514,6 +588,7 @@ function renderAll() {
   renderHeader();
   renderRadar();
   renderStatRow();
+  renderDailyQuest();
   renderTasks();
   renderRecurring();
 }
@@ -547,6 +622,112 @@ function removeTask(t) {
   saveState();
   renderTasks();
   toast(t.templateId ? 'Skipped for today — back next time it’s due' : 'Quest removed');
+}
+
+// ===== The Daily Quest =====
+// Five fixed challenges, assigned by the System rather than chosen. Same XP
+// engine as everything else, but its own slice of state so it can never
+// collide with the player's own quests.
+
+// Spread the all-five bonus evenly over every stat. sign = -1 takes it back.
+function applyDailyBonus(sign) {
+  const per = DAILY_BONUS_XP / STATS.length;
+  const merged = { xp: 0, levelsGained: 0, statGained: 0, rankChanged: null };
+  STATS.forEach(s => mergeEvents(merged, applyXp(per, s.abbr, sign)));
+  return merged;
+}
+
+function mergeEvents(into, from) {
+  into.xp += from.xp;
+  into.levelsGained += from.levelsGained;
+  into.statGained += from.statGained;
+  if (from.rankChanged) into.rankChanged = from.rankChanged;
+  return into;
+}
+
+function toggleDailyQuest(i) {
+  const q = DAILY_QUEST[i];
+  const turningOn = !state.daily.done[q.stat];
+  state.daily.done[q.stat] = turningOn;
+
+  // the tapped challenge's own XP, kept separate so its flash shows +25 (or the
+  // gold +1) rather than the bonus-inflated total
+  const taskEvents = applyXp(effortXp(q.effort), q.stat, turningOn ? 1 : -1);
+  const events = mergeEvents({ xp: 0, levelsGained: 0, statGained: 0, rankChanged: null }, taskEvents);
+
+  // The bonus only stands while all five stand: granted on the fifth check,
+  // taken straight back the moment one comes off. Net zero per cycle, so
+  // check-uncheck-recheck farms nothing.
+  let cleared = false, bonusLost = false;
+  if (dailyQuestCleared(state.daily) && !state.daily.bonus) {
+    state.daily.bonus = true;
+    cleared = true;
+    mergeEvents(events, applyDailyBonus(1));
+  } else if (!dailyQuestCleared(state.daily) && state.daily.bonus) {
+    state.daily.bonus = false;
+    bonusLost = true;
+    mergeEvents(events, applyDailyBonus(-1));
+  }
+
+  saveState();
+  renderAll();
+
+  if (!turningOn) {
+    toast(bonusLost ? 'Quest broken — bonus reversed' : 'Un-done — XP reversed');
+    return;
+  }
+
+  flashFor(taskEvents, q.stat);
+  if (cleared) {
+    // the whole pentagon lights up — that's what the bonus is for
+    const per = DAILY_BONUS_XP / STATS.length;
+    setTimeout(() => STATS.forEach(s => flashStat(s.abbr, per, 0)), 340);
+  }
+  celebrateCards(events, cleared);
+}
+
+function renderDailyQuest() {
+  const count = dailyQuestCount(state.daily);
+  const cleared = dailyQuestCleared(state.daily);
+
+  document.getElementById('dqCount').textContent = count;
+  document.getElementById('dqPanel').classList.toggle('cleared', cleared);
+  document.getElementById('dqClear').classList.toggle('hidden', !cleared);
+  // set directly, not via rAF — the bar is static markup, so the CSS transition
+  // still animates, and the width is right even if this render happens while
+  // the tab is hidden (rAF is paused there, which would leave the bar at 0%)
+  document.getElementById('dqFill').style.width =
+    (count / DAILY_QUEST.length) * 100 + '%';
+
+  const ul = document.getElementById('dqList');
+  ul.innerHTML = '';
+  DAILY_QUEST.forEach((q, i) => {
+    const done = state.daily.done[q.stat];
+    const li = document.createElement('li');
+    li.className = 'task-card dq-card' + (done ? ' done' : '');
+
+    const check = document.createElement('button');
+    check.className = 'task-check';
+    check.textContent = '✓';
+    check.setAttribute('aria-label', `${done ? 'Un-do' : 'Complete'}: ${q.name}`);
+
+    const body = document.createElement('div');
+    body.className = 'task-body';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'task-name';
+    nameEl.textContent = q.name;
+    const target = document.createElement('div');
+    target.className = 'dq-target';
+    target.textContent = q.target;
+    const chip = document.createElement('span');
+    chip.className = 'task-stat';
+    chip.textContent = `${q.stat} · +${effortXp(q.effort)}`;
+    body.append(nameEl, target, chip);
+
+    check.addEventListener('click', () => toggleDailyQuest(i));
+    li.append(check, body);
+    ul.appendChild(li);
+  });
 }
 
 // ===== Screen 2: Log an Action =====

@@ -42,9 +42,21 @@
     <div class="stat-row" id="statRow"></div>
   </section>
 
-  <!-- ===== Today's tasks ===== -->
+  <!-- ===== The System's Daily Quest: 5 fixed challenges, one per stat ===== -->
+  <section class="panel dq-panel" id="dqPanel">
+    <div class="panel-title">DAILY QUEST</div>
+    <div class="dq-head">
+      <div class="dq-note">Complete all five before midnight.</div>
+      <div class="dq-count"><span id="dqCount">0</span>/5</div>
+    </div>
+    <div class="dq-track"><div class="dq-track-fill" id="dqFill"></div></div>
+    <ul class="task-list" id="dqList"></ul>
+    <div class="dq-clear hidden" id="dqClear">✦ QUEST COMPLETE ✦</div>
+  </section>
+
+  <!-- ===== Today's tasks (the player's own quests, any frequency) ===== -->
   <section class="panel">
-    <div class="panel-title">DAILY QUESTS</div>
+    <div class="panel-title">TODAY'S QUESTS</div>
     <ul class="task-list" id="taskList"></ul>
   </section>
 

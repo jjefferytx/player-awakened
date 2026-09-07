@@ -5,7 +5,7 @@
 // version precaches fully during install before the old cache is deleted.
 // DEPLOY RULE: any change to the app's files must come with a CACHE bump.
 
-const CACHE = 'awakened-v2';
+const CACHE = 'awakened-v3';
 const PRECACHE = [
   'index.html',
   'style.css',
